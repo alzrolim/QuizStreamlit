@@ -360,16 +360,11 @@ def show_final_results():
             st.markdown(f"**Fonte:** {question.fonte}")
             st.markdown("---")
     
-    # Botões de ação
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🔄 Tentar Novamente", type="primary", use_container_width=True):
-            reset_quiz()
-            st.rerun()
+    # Botão de ação
+    col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        if st.button("🏠 Novo Quiz", type="secondary", use_container_width=True):
+        if st.button("🔄 Tentar Novamente", type="primary", use_container_width=True):
             reset_quiz()
             st.rerun()
 
