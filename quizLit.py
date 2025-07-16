@@ -165,8 +165,10 @@ def initialize_session_state():
         st.session_state.user_answers = []
     if 'quiz_finished' not in st.session_state:
         st.session_state.quiz_finished = False
-    if 'show_result' not in st.session_state:
-        st.session_state.show_result = False
+    if 'question_answered' not in st.session_state:
+        st.session_state.question_answered = False
+    if 'last_user_answer' not in st.session_state:
+        st.session_state.last_user_answer = None
     if 'last_answer_correct' not in st.session_state:
         st.session_state.last_answer_correct = None
 
@@ -179,7 +181,8 @@ def reset_quiz():
     st.session_state.correct_answers = 0
     st.session_state.user_answers = []
     st.session_state.quiz_finished = False
-    st.session_state.show_result = False
+    st.session_state.question_answered = False
+    st.session_state.last_user_answer = None
     st.session_state.last_answer_correct = None
 
 
@@ -198,12 +201,14 @@ def start_quiz(total_questions: int):
     st.session_state.correct_answers = 0
     st.session_state.user_answers = []
     st.session_state.quiz_finished = False
-    st.session_state.show_result = False
+    st.session_state.question_answered = False
+    st.session_state.last_user_answer = None
+    st.session_state.last_answer_correct = None
 
 
 def answer_question(selected_answer: str):
     """Processa a resposta do usuário"""
-    if st.session_state.quiz_finished:
+    if st.session_state.quiz_finished or st.session_state.question_answered:
         return
     
     current_q = st.session_state.questions[st.session_state.current_question]
@@ -219,14 +224,16 @@ def answer_question(selected_answer: str):
         'is_correct': is_correct
     })
     
+    st.session_state.question_answered = True
+    st.session_state.last_user_answer = selected_answer
     st.session_state.last_answer_correct = is_correct
-    st.session_state.show_result = True
 
 
 def next_question():
     """Avança para a próxima questão"""
     st.session_state.current_question += 1
-    st.session_state.show_result = False
+    st.session_state.question_answered = False
+    st.session_state.last_user_answer = None
     st.session_state.last_answer_correct = None
     
     if st.session_state.current_question >= len(st.session_state.questions):
@@ -258,6 +265,23 @@ def show_initial_screen():
             st.rerun()
 
 
+def get_button_style(letter: str, current_q: Question, user_answer: str, is_answered: bool) -> str:
+    """Retorna o estilo do botão baseado no estado da resposta"""
+    if not is_answered:
+        return "secondary"
+    
+    # Se é a resposta correta, sempre verde
+    if letter == current_q.gabarito:
+        return "success"
+    
+    # Se é a resposta do usuário e está errada, vermelho
+    if letter == user_answer and letter != current_q.gabarito:
+        return "error"
+    
+    # Outras alternativas ficam desabilitadas
+    return "secondary"
+
+
 def show_question_screen():
     """Mostra a tela da questão atual"""
     if not st.session_state.questions:
@@ -274,32 +298,57 @@ def show_question_screen():
     # Barra de progresso
     st.progress(progress, text=f"Questão {st.session_state.current_question + 1} de {total_questions}")
     
-    # Mostrar resultado da questão anterior se houver
-    if st.session_state.show_result and st.session_state.last_answer_correct is not None:
-        if st.session_state.last_answer_correct:
-            st.success("✅ **CORRETO!** Parabéns! Você acertou esta questão!")
-        else:
-            last_answer = st.session_state.user_answers[-1]
-            st.error(f"❌ **INCORRETO!** Sua resposta: {last_answer['user_answer'].upper()} | Resposta correta: {last_answer['correct_answer'].upper()}")
-        
-        if st.button("➡️ Próxima Questão", type="primary"):
-            next_question()
-            st.rerun()
-        return
-    
     # Questão atual
     st.markdown("---")
     st.markdown(f"### Questão {st.session_state.current_question + 1}")
     st.markdown(f"**{current_q.enunciado}**")
     st.markdown(f"*Fonte: {current_q.fonte}*")
     
+    # Mostrar resultado se a questão foi respondida
+    if st.session_state.question_answered:
+        if st.session_state.last_answer_correct:
+            st.success("✅ **CORRETO!** Parabéns! Você acertou esta questão!")
+        else:
+            st.error(f"❌ **INCORRETO!** Sua resposta: {st.session_state.last_user_answer.upper()} | Resposta correta: {current_q.gabarito.upper()}")
+    
     # Alternativas
     st.markdown("#### Escolha sua resposta:")
     alternatives = current_q.get_alternatives()
     
     for letter, text in alternatives.items():
-        if st.button(f"{letter.upper()}) {text}", key=f"btn_{letter}", use_container_width=True):
-            answer_question(letter)
+        # Determinar cor/estilo do botão
+        button_disabled = st.session_state.question_answered
+        button_key = f"btn_{letter}_{st.session_state.current_question}"
+        
+        # Estilo baseado no estado
+        if st.session_state.question_answered:
+            if letter == current_q.gabarito:
+                # Resposta correta - verde
+                button_label = f"✅ {letter.upper()}) {text}"
+                button_type = "primary"
+            elif letter == st.session_state.last_user_answer and not st.session_state.last_answer_correct:
+                # Resposta errada do usuário - vermelho
+                button_label = f"❌ {letter.upper()}) {text}"
+                button_type = "secondary"
+            else:
+                # Outras alternativas
+                button_label = f"{letter.upper()}) {text}"
+                button_type = "secondary"
+        else:
+            button_label = f"{letter.upper()}) {text}"
+            button_type = "secondary"
+        
+        if st.button(button_label, key=button_key, disabled=button_disabled, 
+                    type=button_type, use_container_width=True):
+            if not st.session_state.question_answered:
+                answer_question(letter)
+                st.rerun()
+    
+    # Botão para próxima questão (só aparece após responder)
+    if st.session_state.question_answered:
+        st.markdown("---")
+        if st.button("➡️ Próxima Questão", type="primary", use_container_width=True):
+            next_question()
             st.rerun()
 
 
@@ -397,6 +446,10 @@ def main():
         }
         .stAlert {
             border-radius: 10px;
+        }
+        /* Estilos para botões de resposta */
+        .stButton > button:disabled {
+            opacity: 0.8;
         }
     </style>
     """, unsafe_allow_html=True)
